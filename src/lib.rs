@@ -22,3 +22,34 @@ pub fn block_on<F: Future>(f: F) -> F::Output {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::block_on;
+    use core::future;
+    use core::task::Poll;
+    #[test]
+    fn test_block_on_trivial() {
+        assert_eq!(block_on(async { 42 }), 42);
+    }
+
+    #[test]
+    fn test_block_on_n_tries() {
+        for n in 0..420 {
+            let mut index = 0;
+            let future = future::poll_fn(|ctx| {
+                if index < n {
+                    index += 1;
+                    ctx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(index)
+                }
+            });
+            let ret = block_on(async {
+                assert_eq!(future.await, n);
+                n
+            });
+            assert_eq!(ret, n);
+        }
+    }
+}
