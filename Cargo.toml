@@ -2,3 +2,7 @@
 name = "worst-executor"
 version = "0.1.0"
 edition = "2021"
+
+[dev-dependencies]
+async-fs = "1"
+futures-lite = "1"

@@ -24,9 +24,12 @@ pub fn block_on<F: Future>(f: F) -> F::Output {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use crate::block_on;
+    use alloc::vec::Vec;
     use core::future;
     use core::task::Poll;
+    use futures_lite::{AsyncReadExt, AsyncWriteExt};
     #[test]
     fn test_block_on_trivial() {
         assert_eq!(block_on(async { 42 }), 42);
@@ -52,4 +55,26 @@ mod tests {
             assert_eq!(ret, n);
         }
     }
+
+    #[test]
+    fn test_async_fs() {
+        use async_fs::File;
+        let data = b"Hello, world! from my async executor";
+        let path = "./target/test_file";
+        block_on(async {
+            let mut file = File::create(path).await.unwrap();
+            file.write_all(data).await.unwrap();
+            file.flush().await.unwrap();
+        });
+
+        let read_data = block_on(async {
+            let mut file = File::open(path).await.unwrap();
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).await.unwrap();
+            buf
+        });
+        assert_eq!(read_data, data);
+        block_on(async_fs::remove_file(path)).unwrap()
+    }
+
 }
