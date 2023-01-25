@@ -5,4 +5,5 @@ edition = "2021"
 
 [dev-dependencies]
 async-fs = "1"
+async-net = "1"
 futures-lite = "1"

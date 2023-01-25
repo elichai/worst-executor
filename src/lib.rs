@@ -1,5 +1,7 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![feature(waker_getters, const_waker)]
+#![cfg_attr(test, feature(future_join))]
+
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use core::{future::Future, ptr::null};
 use core::{hint, pin::pin};
@@ -24,12 +26,9 @@ pub fn block_on<F: Future>(f: F) -> F::Output {
 
 #[cfg(test)]
 mod tests {
-    extern crate alloc;
     use crate::block_on;
-    use alloc::vec::Vec;
-    use core::future;
-    use core::task::Poll;
-    use futures_lite::{AsyncReadExt, AsyncWriteExt};
+    use core::{future, pin::pin, task::Poll};
+    use futures_lite::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     #[test]
     fn test_block_on_trivial() {
         assert_eq!(block_on(async { 42 }), 42);
@@ -56,16 +55,38 @@ mod tests {
         }
     }
 
+    async fn write_read_eq<W: AsyncWrite, R: AsyncRead>(writer: W, reader: R, data: &[u8]) {
+        let (mut writer, mut reader) = (pin!(writer), pin!(reader));
+        let write = async {
+            writer.write_all(data).await.unwrap();
+            writer.flush().await.unwrap();
+        };
+        let read = async {
+            let mut buf = vec![0u8; data.len()];
+            reader.read_exact(&mut buf).await.unwrap();
+            buf
+        };
+        let (_, buf) = future::join!(write, read).await;
+        assert_eq!(buf, data);
+    }
+
     #[test]
     fn test_async_fs() {
         use async_fs::File;
         let data = b"Hello, world! from my async executor";
         let path = "./target/test_file";
-        block_on(async {
-            let mut file = File::create(path).await.unwrap();
-            file.write_all(data).await.unwrap();
-            file.flush().await.unwrap();
+        // Cleanup
+        let _ = block_on(async_fs::remove_file(path));
+        block_on(async{
+            {
+                let writer = File::create(path).await.unwrap();
+                let reader = File::open(path).await.unwrap();
+                write_read_eq(writer, reader, data).await;
+            }
+            // Cleanup
+            async_fs::remove_file(path).await.unwrap();
         });
+    }
 
         let read_data = block_on(async {
             let mut file = File::open(path).await.unwrap();
