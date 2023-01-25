@@ -128,7 +128,7 @@ mod tests {
     fn test_async_udp_socket() {
         use async_net::UdpSocket;
         let localhost = "127.0.0.1";
-        let data = b"Hello, world! from my async executor in TCP stream";
+        let data = b"Hello, world! from my async executor in UDP stream";
 
         block_on(async {
             let sender = UdpSocket::bind((localhost, 0)).await.unwrap();
@@ -143,6 +143,35 @@ mod tests {
             sender_res.unwrap();
             receiver_res.unwrap();
             assert_eq!(buf, data);
+        });
+    }
+
+    #[test]
+    fn test_async_unbounded_channel() {
+        let data = b"Hello, world! from my async executor in a channel";
+        let (sender, receiver) = async_channel::unbounded();
+        block_on(async {
+            let (sender_res, ret) = join!(sender.send(data), receiver.recv()).await;
+            sender_res.unwrap();
+            assert_eq!(ret.unwrap(), data);
+        });
+    }
+
+    #[test]
+    fn test_async_bounded_channel() {
+        let (sender, receiver) = async_channel::bounded(1);
+        block_on(async {
+            let send_20_fut = async {
+                for i in 0..20 {
+                    sender.send(i).await.unwrap();
+                }
+            };
+            let recv_20_fut = async {
+                for i in 0..20 {
+                    assert_eq!(receiver.recv().await.unwrap(), i);
+                }
+            };
+            join!(send_20_fut, recv_20_fut).await;
         });
     }
 }

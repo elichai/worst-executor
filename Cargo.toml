@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dev-dependencies]
+futures-lite = "1"
 async-fs = "1"
 async-net = "1"
-futures-lite = "1"
+async-channel = "1"
