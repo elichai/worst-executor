@@ -27,6 +27,7 @@ pub fn block_on<F: Future>(f: F) -> F::Output {
 #[cfg(test)]
 mod tests {
     use crate::block_on;
+    use core::future::join;
     use core::{future, pin::pin, task::Poll};
     use futures_lite::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     #[test]
@@ -77,7 +78,7 @@ mod tests {
         let path = "./target/test_file";
         // Cleanup
         let _ = block_on(async_fs::remove_file(path));
-        block_on(async{
+        block_on(async {
             {
                 let writer = File::create(path).await.unwrap();
                 let reader = File::open(path).await.unwrap();
@@ -88,14 +89,60 @@ mod tests {
         });
     }
 
-        let read_data = block_on(async {
-            let mut file = File::open(path).await.unwrap();
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf).await.unwrap();
-            buf
+    #[cfg(unix)]
+    #[test]
+    fn test_async_unix_socket() {
+        use async_net::unix::{UnixListener, UnixStream};
+        let path = "./target/test_socket.sock";
+        let data = b"Hello, world! from my async executor in UNIX stream";
+        // Cleanup
+        let _ = block_on(async_fs::remove_file(path));
+        let listener = UnixListener::bind(path).unwrap();
+
+        block_on(async {
+            let (sender, receiver) =
+                future::join!(listener.accept(), UnixStream::connect(path)).await;
+            write_read_eq(sender.unwrap().0, receiver.unwrap(), data).await;
+            // Cleanup
+            async_fs::remove_file(path).await.unwrap();
         });
-        assert_eq!(read_data, data);
-        block_on(async_fs::remove_file(path)).unwrap()
     }
 
+    #[test]
+    fn test_async_tcp_socket() {
+        use async_net::{TcpListener, TcpStream};
+        let localhost = "127.0.0.1";
+        let data = b"Hello, world! from my async executor in TCP stream";
+
+        block_on(async {
+            let listener = TcpListener::bind((localhost, 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+
+            let (sender, receiver) =
+                future::join!(listener.accept(), TcpStream::connect((localhost, port))).await;
+            write_read_eq(sender.unwrap().0, receiver.unwrap(), data).await;
+        });
+    }
+
+    #[test]
+    fn test_async_udp_socket() {
+        use async_net::UdpSocket;
+        let localhost = "127.0.0.1";
+        let data = b"Hello, world! from my async executor in TCP stream";
+
+        block_on(async {
+            let sender = UdpSocket::bind((localhost, 0)).await.unwrap();
+            let receiver = UdpSocket::bind((localhost, 0)).await.unwrap();
+            let sender_port = sender.local_addr().unwrap().port();
+            let receiver_port = receiver.local_addr().unwrap().port();
+            receiver.connect((localhost, sender_port)).await.unwrap();
+            sender.connect((localhost, receiver_port)).await.unwrap();
+            let mut buf = vec![0u8; data.len()];
+            let (sender_res, receiver_res) =
+                join!(sender.send(data), receiver.recv(&mut buf)).await;
+            sender_res.unwrap();
+            receiver_res.unwrap();
+            assert_eq!(buf, data);
+        });
+    }
 }
