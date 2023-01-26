@@ -2,9 +2,19 @@
 name = "worst-executor"
 version = "0.1.0"
 edition = "2021"
+license = "MIT/Apache-2.0"
+authors = ["Elichai Turkel <elichai.turkel@gmail.com>"]
+repository = "https://github.com/elichai/worst-executor"
+readme = "README.md"
+description = "A spin-loop like executor for async"
+categories = ["asynchronous", "no-std"]
+keywords = ["async", "no_std", "no-std", "futures"]
+include = ["src/**/*", "Cargo.toml", "LICENSE-MIT", "LICENSE-APACHE", "README.md"]
+
+
 
 [dev-dependencies]
-futures-lite = "1"
 async-fs = "1"
 async-net = "1"
 async-channel = "1"
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
