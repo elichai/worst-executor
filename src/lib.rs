@@ -11,7 +11,7 @@
 //! wait on a future that never resolves, your program will hang. which is why you should probably not use this.
 //!
 //! Note that because of its simplicity, the library only uses `core` and does not require `std` or `alloc`
-//! and is literally 16 lines of code.
+//! and is literally 14 lines of code.
 //!
 //! This can become more useful using the `core::future::join` macro
 //! which allows you to wait on multiple futures at once (each time polling a different future).
@@ -71,10 +71,7 @@ use core::{hint, pin::pin};
 ///
 pub fn block_on<F: Future>(f: F) -> F::Output {
     static WAKER: Waker = {
-        const RAW_WAKER: RawWaker = RawWaker::new(
-            null(),
-            &RawWakerVTable::new(|_| RAW_WAKER, |_| (), |_| (), |_| ()),
-        );
+        const RAW_WAKER: RawWaker = RawWaker::new(null(), &RawWakerVTable::new(|_| RAW_WAKER, |_| (), |_| (), |_| ()));
         unsafe { Waker::from_raw(RAW_WAKER) }
     };
 
@@ -92,10 +89,7 @@ mod tests {
     use crate::block_on;
     use core::future::join;
     use core::{future, pin::pin, task::Poll};
-    use futures::{
-        stream::FuturesUnordered, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt,
-        StreamExt,
-    };
+    use futures::{stream::FuturesUnordered, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, StreamExt};
 
     #[test]
     fn test_block_on_trivial() {
@@ -167,8 +161,7 @@ mod tests {
         let listener = UnixListener::bind(path).unwrap();
 
         block_on(async {
-            let (sender, receiver) =
-                future::join!(listener.accept(), UnixStream::connect(path)).await;
+            let (sender, receiver) = future::join!(listener.accept(), UnixStream::connect(path)).await;
             write_read_eq(sender.unwrap().0, receiver.unwrap(), data).await;
             // Cleanup
             async_fs::remove_file(path).await.unwrap();
@@ -185,8 +178,7 @@ mod tests {
             let listener = TcpListener::bind((localhost, 0)).await.unwrap();
             let port = listener.local_addr().unwrap().port();
 
-            let (sender, receiver) =
-                future::join!(listener.accept(), TcpStream::connect((localhost, port))).await;
+            let (sender, receiver) = future::join!(listener.accept(), TcpStream::connect((localhost, port))).await;
             write_read_eq(sender.unwrap().0, receiver.unwrap(), data).await;
         });
     }
@@ -205,8 +197,7 @@ mod tests {
             receiver.connect((localhost, sender_port)).await.unwrap();
             sender.connect((localhost, receiver_port)).await.unwrap();
             let mut buf = vec![0u8; data.len()];
-            let (sender_res, receiver_res) =
-                join!(sender.send(data), receiver.recv(&mut buf)).await;
+            let (sender_res, receiver_res) = join!(sender.send(data), receiver.recv(&mut buf)).await;
             sender_res.unwrap();
             receiver_res.unwrap();
             assert_eq!(buf, data);
@@ -266,8 +257,7 @@ mod tests {
         let res = block_on(async move {
             let mut readers = futures::future::join_all((0..10).map(|i| async move {
                 let mut stream = TcpStream::connect((localhost, port)).await.unwrap();
-                let data =
-                    format!("Hello, world! from my async executor in TCP stream number: {i}");
+                let data = format!("Hello, world! from my async executor in TCP stream number: {i}");
                 stream.write_all(data.as_bytes()).await.unwrap();
                 let mut buf = vec![0u8; data.len()];
                 stream.read_exact(&mut buf).await.unwrap();
@@ -280,17 +270,12 @@ mod tests {
             let mut listener = listener.incoming().fuse();
             loop {
                 futures::select! {
-                    new_connection = listener.select_next_some() => {
-                        connection_handlers.push(handle_connection(new_connection.unwrap()));
-                    },
-                    socket = connection_handlers.select_next_some() => {
+                    new_connection = listener.select_next_some() => connection_handlers.push(handle_connection(new_connection.unwrap())),
+                    socket = connection_handlers.select_next_some() =>
                         if let Some(socket) = socket {
                             connection_handlers.push(handle_connection(socket));
-                        }
-                    },
-                    result = readers => {
-                        break result
-                    }
+                        },
+                    result = readers => break result,
                 }
             }
         });
