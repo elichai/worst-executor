@@ -1,5 +1,5 @@
 # Worst Executor
-[![Build status](https://github.com/elichai/worst-executor/workflows/ci/badge.svg)](https://github.com/elichai/worst-executor/actions)
+[![Build status](https://github.com/elichai/worst-executor/actions/workflows/ci.yaml/badge.svg)](https://github.com/elichai/worst-executor/actions)
 [![Latest version](https://img.shields.io/crates/v/worst-executor.svg)](https://crates.io/crates/worst-executor)
 ![License](https://img.shields.io/crates/l/worst-executor.svg)
 [![dependency status](https://deps.rs/repo/github/elichai/worst-executor/status.svg)](https://deps.rs/repo/github/elichai/worst-executor)
@@ -52,6 +52,23 @@ to handle the control flow of your program, while always running on a single thr
 ```rust
 use async_net::{TcpListener, TcpStream};
 use futures::{stream::FuturesUnordered, AsyncReadExt, AsyncWriteExt, StreamExt};
+use worst_executor::block_on;
+
+block_on(async {
+    let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
+    let mut connection_handlers = FuturesUnordered::new();
+    // This stream is infinite so it's OK to call fuse.
+    let mut listener = listener.incoming().fuse();
+    loop {
+        futures::select! {
+            new_connection = listener.select_next_some() => connection_handlers.push(handle_connection(new_connection?)),
+            socket = connection_handlers.select_next_some() =>
+                if let Some(socket) = socket {
+                    connection_handlers.push(handle_connection(socket));
+                },
+        }
+    }
+})
 
 async fn handle_connection(mut stream: TcpStream) -> Option<TcpStream> {
     let mut buf = [0u8; 1024];
@@ -69,20 +86,4 @@ async fn handle_connection(mut stream: TcpStream) -> Option<TcpStream> {
             .map(|()| stream)
             .ok()
 }
-
-worst_executor::block_on(async {
-    let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
-    let mut connection_handlers = FuturesUnordered::new();
-    // This stream is inifinite so same to call fuse.
-    let mut listener = listener.incoming().fuse();
-    loop {
-        futures::select! {
-            new_connection = listener.select_next_some() => connection_handlers.push(handle_connection(new_connection?)),
-            socket = connection_handlers.select_next_some() => 
-                if let Some(socket) = socket {
-                    connection_handlers.push(handle_connection(socket));
-                },
-        }
-    }
-})
 ```
